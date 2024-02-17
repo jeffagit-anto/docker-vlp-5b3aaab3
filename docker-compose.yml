@@ -1,0 +1,87 @@
+version: '3.6'
+
+services:
+  zope:
+    image: robcast/legacy-zope:2.13
+    restart: unless-stopped
+    command: ["/usr/local/zope/zopeVLP/bin/runzope"]
+    volumes:
+      - ./zope/zopeVLP:/usr/local/zope/zopeVLP:rw
+      - pg-run:/var/run/postgresql
+      - /mpiwg/online/permanent/vlp:/mpiwg/online/permanent/vlp:shared
+    networks:
+      - internal
+      
+  zeo:
+    image: robcast/legacy-zope:2.13
+    restart: unless-stopped
+    command: ["/usr/local/zope/zeoVLP/bin/runzeo"]
+    volumes:
+      - ./zope/zeoVLP:/usr/local/zope/zeoVLP:rw
+    networks:
+      - internal
+
+  db:
+    image: postgres:10
+    restart: unless-stopped
+    environment:
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?error_missing_env}
+      - POSTGRES_USER=${POSTGRES_USER:-vlp}
+    volumes:
+      - pg-run:/var/run/postgresql
+      - pg-data:/var/lib/postgresql/data
+    networks:
+      - internal
+
+  apache:
+    build: ./php-apache
+    #image: php:7.4-apache
+    restart: unless-stopped
+    volumes:
+      - ./conf/apache/vlp.conf:/etc/apache2/sites-available/000-default.conf:ro
+      - ./web:/Library/WebServer/VLP:rw
+      - pg-run:/var/run/postgresql
+      - /mpiwg/online/permanent/vlp:/mpiwg/online/permanent/vlp:shared
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=proxy-net"
+      # create router for our host
+      - "traefik.http.routers.vlp.rule=Host(`${VIRTUAL_HOST:-vlp.mpiwg-berlin.mpg.de}`)"
+      # use TLS
+      - "traefik.http.routers.vlp.entrypoints=https"
+      - "traefik.http.routers.vlp.tls=true"
+    networks:
+      - proxy-net
+      - internal
+
+  cache:
+    image: varnish:6.0
+    restart: unless-stopped
+    volumes:
+      - ./conf/varnish/vlp.vcl:/etc/varnish/default.vcl:ro 
+    tmpfs: /var/lib/varnish:exec
+    networks:
+      internal:
+        aliases:
+          # make sure apache with proxy-net can find the right container
+          - vlp-cache
+
+#  tomcat:
+#    image: tomcat:9-jdk8
+#    restart: unless-stopped
+#    volumes:
+#      - ./tomcat/fop-servlet.war:/usr/local/tomcat/webapps/fop-servlet.war:ro
+#    networks:
+#      internal:
+#        aliases:
+#          # make sure apache with proxy-net can find the right container
+#          - vlp-tomcat
+
+volumes:
+  pg-run:
+  pg-data:
+
+networks:
+  internal:
+  proxy-net:
+    name: proxy-net

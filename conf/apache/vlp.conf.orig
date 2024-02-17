@@ -1,0 +1,97 @@
+NameVirtualHost *:80
+<VirtualHost *:80>
+        ServerName vlp.mpiwg-berlin.mpg.de
+	ServerAdmin vlpadmin@mpiwg-berlin.mpg.de
+        #ServerAdmin itgroup@mpiwg-berlin.mpg.de
+        DocumentRoot "/Library/WebServer/VLP/"
+
+    <Directory "/Library/WebServer/VLP">
+    	  Options FollowSymLinks MultiViews
+    	  AllowOverride None
+          Order allow,deny
+	  Allow from all
+	# Redirect from lise index to search index
+    	#
+    	Redirect 301 /lise/index.html http://vlp.mpiwg-berlin.mpg.de/vlp/library/index.html
+#    Redirect 301 /library/journals/index.html http://vlp.mpiwg-berlin.mpg.de/library/journals.html
+#    Redirect 301 /library/journals/leipzig18661876.html http://vlp.mpiwg-berlin.mpg.de/library/journals.html
+#    Redirect 301 /technology/data/index.html http://vlpdb.mpiwg-berlin.mpg.de/vlp/tecSearch.html
+#    Redirect 301 /zope http://vlp.mpiwg-berlin.mpg.de:8880/vlp/vlp_coll
+
+    </Directory>
+
+
+	ErrorLog "/Library/WebServer/VLP/statistics/error_log"
+	LogLevel warn
+	LogFormat "%h %l %u %t \"%r\" %>s %b \"%{Referer}i\" \"%{User-Agent}i\"" combined
+	LogFormat "%h %l %u %t \"%r\" %>s %b" common
+	LogFormat "%{Referer}i -> %U" referer
+	LogFormat "%{User-agent}i" agent
+	CustomLog "/Library/WebServer/VLP/statistics/access_log" combined
+
+# URL rewrite for datasheets from old vlp url's to zope version
+RewriteLog /tmp/rewrite_log
+RewriteLogLevel 0
+
+RewriteEngine on
+#RewriteCond %{HTTP_HOST} ^vlp.mpiwg-berlin.mpg.de$ [NC]
+#RewriteRule ([a-z]+)/data/([a-z]+[0-9]+)\.html(.*) http://vlp.mpiwg-berlin.mpg.de:8080/VirtualHostBase/http/vlp.mpiwg-berlin.mpg.de:80/vlp/vlp_coll/VirtualHostRoot/$1/data/$2$3 [P,L]
+#RewriteCond %{HTTP_HOST} ^vlp.mpiwg-berlin.mpg.de$ [NC]
+#RewriteRule ^([^/]*)(.*)? http://vlp.mpiwg-berlin.mpg.de:8080/VirtualHostBase/http/vlp.mpiwg-berlin.mpg.de:80/vlp/vlp_coll/VirtualHostRoot/$1$2 [P,L]
+
+#Rewritecond $1 =print
+#RewriteRule ([a-z]+)/(.*) http://vlp.mpiwg-berlin.mpg.de:8080/VirtualHostBase/http/vlp.mpiwg-berlin.mpg.de:80/vlp/vlp_coll/VirtualHostRoot/$2 [E=REQUEST_URI:$1,P,L]
+
+Rewritecond $1 =library
+#RewriteRule ([a-z]+)/data/([a-z]+[0-9]+)\.html(.*) http://127.0.0.1:9080/VirtualHostBase/http/vlp.mpiwg-berlin.mpg.de:80/vlp/vlp_coll/VirtualHostRoot/$1/data/$2$3 [P,L]
+RewriteRule ([a-z]+)/data/([a-z]+[0-9]+)\.html(.*) http://xserve07.mpiwg-berlin.mpg.de:39080/VirtualHostBase/http/vlp.mpiwg-berlin.mpg.de:80/vlp/vlp_coll/VirtualHostRoot/$1/data/$2$3 [P,L]
+RewriteCond $1 !=library
+RewriteRule ([a-z]+)/data/([a-z]+[0-9]+)\.html http://vlp.mpiwg-berlin.mpg.de/$1/data\?id=$2 [R=301,L] 
+RewriteRule (lit[0-9]+)/([apz][0-9]+)([^\.]+)\.html http://vlp.mpiwg-berlin.mpg.de/library/data/$1/\?p=$2$3 [R=301,L]
+RewriteRule lise/(lit[0-9]+)/? http://vlp.mpiwg-berlin.mpg.de/library/data/$1  [R=301,L]
+RewriteRule trendscout.html http://vlp.mpiwg-berlin.mpg.de/php/trendscout.php [P] 
+RewriteRule ^library/download.php http://vlp.mpiwg-berlin.mpg.de/php/download.php [S=1,PT] 
+RewriteCond $1 !=VIPP
+RewriteCond $1 !=exp
+RewriteCond $1 !=error
+RewriteCond $1 !=statistics
+RewriteCond $1 !=php
+RewriteCond $1 !(java)
+RewriteCond $1 !(media) 
+RewriteCond $1 !(pdf)
+RewriteCond $1 !(pdfgen)
+RewriteCond $1 !(vlpimages)
+RewriteCond $1 !(documents)
+RewriteCond $1 !(mb)
+# redirect to Zope
+#RewriteRule ^/([^/]+)(/*.*) http://127.0.0.1:9080/VirtualHostBase/http/vlp.mpiwg-berlin.mpg.de:80/vlp/vlp_coll/VirtualHostRoot/$1$2 [P]
+RewriteRule ^/([^/]+)(/*.*) http://xserve07.mpiwg-berlin.mpg.de:39080/VirtualHostBase/http/vlp.mpiwg-berlin.mpg.de:80/vlp/vlp_coll/VirtualHostRoot/$1$2 [P]
+
+# redirect to PDF-Servlet
+RewriteRule ^/pdfgen/essays/([^.]+).pdf http://127.0.0.1:28080/fop-servlet/servlet/VLPEssayServlet?article=$1 [P]
+
+# allow 404 redirect to index.html per .htaccess 
+<Directory "/Library/WebServer/VLP/exp/geimer">
+    
+	AllowOverride FileInfo
+
+</Directory>
+
+<Directory "/Library/WebServer/VLP/statistics">
+# access only from intranet or with authentication
+# user vlp : vlp default password!	
+
+    AuthType Basic
+    AuthName "vlp intern"
+    AuthUserFile /etc/httpd/passwords
+    Require user vlp
+	
+    Order deny,allow
+    Deny from all
+    Allow from mpiwg-berlin.mpg.de
+    
+    Satisfy any
+    
+</Directory>
+
+</VirtualHost>

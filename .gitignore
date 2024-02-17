@@ -1,0 +1,8 @@
+/.project
+/.env
+/.settings/
+/.pydevproject
+*.pyc
+/vlp_data-201009-all.sql.gz
+/docker-compose.override.yml
+/vlp-web-201118.tgz

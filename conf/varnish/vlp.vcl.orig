@@ -1,0 +1,186 @@
+# Das default Backend, zu dem alle Anfragen die der Varnish nicht beantworten kann, durchgereicht werden.
+# In unserem Fall lauscht hier der Nginx:
+backend default {
+.host = "vlp.mpiwg-berlin.mpg.de";
+.port = "8080";
+.first_byte_timeout =300s;
+.connect_timeout = 10s;
+.between_bytes_timeout = 20s;
+ .probe = {
+                .url = "/";
+                .interval = 5s;
+                .timeout = 1 s;
+                .window = 5;
+                .threshold = 3;
+  }
+}
+
+backend default2 {
+.host = "vlp.mpiwg-berlin.mpg.de";
+.port = "8180";
+.first_byte_timeout =300s;
+.connect_timeout = 10s;
+.between_bytes_timeout = 20s;
+ .probe = {
+                .url = "/";
+                .interval = 5s;
+                .timeout = 1 s;
+                .window = 5;
+                .threshold = 3;
+  }
+}
+
+backend default3 {
+.host = "vlp.mpiwg-berlin.mpg.de";
+.port = "8280";
+.first_byte_timeout =300s;
+.connect_timeout = 10s;
+.between_bytes_timeout = 20s;
+ .probe = {
+                .url = "/";
+                .interval = 5s;
+                .timeout = 1 s;
+                .window = 5;
+                .threshold = 3;
+  }
+}
+
+director baz round-robin {
+        {
+                .backend = default;
+        }
+        {
+                .backend = default2;
+        }
+        {
+                .backend = default3;
+        }
+}
+
+# ACL, für den Zugriff von Zope. Dieser ist nötig damit Zope Objekte aus dem Cache entfernen kann, 
+# wenn diese veraltet sind. Wir geben hier den Zugriff von lokal und aus dem LAN frei.
+acl purge {
+    "localhost";
+    "141.14.236.47";
+    "10.1.0.0"/24;
+}
+
+
+sub vcl_recv {
+    set req.backend=baz;
+    set req.grace = 2m;
+    
+
+  if (req.request != "GET" &&
+    req.request != "HEAD" &&
+    req.request != "PUT" &&
+    req.request != "POST" &&
+    req.request != "TRACE" &&
+    req.request != "OPTIONS" &&
+    req.request != "DELETE") {
+    /* Non-RFC2616 or CONNECT which is weird. */
+      pipe;
+  }
+  
+  if (req.request != "GET" && req.request != "HEAD") {
+    /* We only deal with GET and HEAD by default */
+    # POST - Logins and edits
+    if (req.request == "POST") {
+      pass;
+    }
+    # PURGE - The CacheFu product can invalidate updated URLs
+    if (req.request == "PURGE") {
+      if (!client.ip ~ purge) {
+        error 405 "Not allowed.";
+      }
+      lookup;
+    }
+  }
+  # Don't cache authenticated requests
+  if (req.http.Authorization || req.http.Cookie && req.http.Cookie ~ "__ac(_(name|password|persistent))="){
+
+      # Force lookup of specific urls unlikely to need protection
+      if (req.url ~ "\.(js|css)") {
+          remove req.http.cookie;
+          lookup;
+      }
+      pass;
+  }
+#   if (req.url ~ "/images") {
+#        unset req.http.cookie;
+#    }
+#    if (req.url ~ "/data") {
+#       unset req.http.cookie;
+#    }
+#    if (req.url ~ "/concepts") {
+#        unset req.http.cookie;
+#    }
+
+  lookup;
+}
+
+sub vcl_pipe {
+    pipe;
+}
+
+sub vcl_pass {
+    pass;
+}
+
+sub vcl_hash {
+    set req.hash += req.url;
+    if (req.http.host) {
+        set req.hash += req.http.host;
+    } else {
+        set req.hash += server.ip;
+    }
+    hash;
+}
+
+sub vcl_hit {
+    if (req.request == "PURGE") {
+        set obj.ttl = 0s;
+        error 200 "Purged";
+    }
+    deliver;
+}
+
+sub vcl_miss {
+    if (req.request == "PURGE") {
+        error 404 "Not in cache";
+    }
+    fetch;
+}
+
+sub vcl_fetch {
+
+#if (req.url ~ "/images") {
+#        unset req.http.cookie;
+#    }
+#if (req.url ~ "/data") {
+#   unset req.http.cookie;
+#    }
+#if (req.url ~ "/concepts") {
+#   unset req.http.cookie;
+#    }
+
+    set req.grace = 2m;
+    if (req.request == "PURGE") {
+        error 404 "Not in cache";
+    }
+    set obj.prefetch =  -30s;
+
+    # hier wird eine min TTL von einer Stunde gesetzt.
+    # Das heißt alle Objekte die gechached werden können,
+    # werden mindestens für 1 Stunde im Cache gehalten.
+    # Über die Einstellungen in Zope kann dieser Wert noch für bestimmte Objekte erhöht werden
+    #changed to 10 hours.
+    if (obj.ttl < 36000s) {
+        set obj.ttl = 36000s;
+    }
+    deliver;
+}
+
+sub vcl_deliver {
+    deliver;
+}
